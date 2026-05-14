@@ -635,7 +635,6 @@
                         const userId = childSnapshot.key;
                         if (userId !== currentUser.uid) {
                             const userData = childSnapshot.val();
-                            // FIX: terima user yang punya email saja (login Google tanpa fullname)
                             if (userData && (userData.fullname || userData.email)) {
                                 allUsers.push({
                                     uid: userId,
@@ -733,6 +732,7 @@
             if (messagesUnsubscribe) messagesUnsubscribe();
             const chatId = generateChatId(currentUser.uid, selectedUserId);
             const messagesRef = ref(database, `chats/${chatId}/messages`);
+            console.log('📥 Loading messages for chatId:', chatId);
 
             messagesUnsubscribe = onValue(messagesRef, (snapshot) => {
                 const messagesArea = document.getElementById('messagesArea');
@@ -741,6 +741,7 @@
                 if (snapshot.exists()) {
                     snapshot.forEach((child) => messages.push({ key: child.key, ...child.val() }));
                 }
+                console.log('📦 Messages from Firebase:', messages.length, messages);
                 messages.sort((a, b) => a.timestamp - b.timestamp);
 
                 if (messages.length === 0) {
@@ -748,11 +749,13 @@
                     return;
                 }
 
+                let renderedCount = 0;
                 messages.forEach(msg => {
                     if (msg.deletedFor && msg.deletedFor[currentUser.uid]) return;
                     if (msg.isUnsent && msg.senderId !== currentUser.uid) return;
                     if (msg.isDeleted && msg.senderId !== currentUser.uid) return;
 
+                    renderedCount++;
                     const el = document.createElement('div');
                     el.className = `message ${msg.senderId === currentUser.uid ? 'sent' : 'received'}`;
                     el.setAttribute('data-message-id', msg.key);
@@ -770,7 +773,7 @@
                         }
                         if (msg.text) contentHtml += `<p style="margin-top:8px;">${escapeHtml(msg.text)}</p>`;
                     } else {
-                        contentHtml = `<p>${escapeHtml(msg.text)}</p>`;
+                        contentHtml = `<p>${escapeHtml(msg.text || '')}</p>`;
                     }
 
                     const statusHtml = msg.senderId === currentUser.uid
@@ -788,7 +791,10 @@
                         </div>`;
                     messagesArea.appendChild(el);
                 });
+                console.log('✅ Rendered', renderedCount, 'messages');
                 messagesArea.scrollTop = messagesArea.scrollHeight;
+            }, (error) => {
+                console.error('❌ onValue error:', error);
             });
         }
 
@@ -800,16 +806,18 @@
 
             const chatId = generateChatId(currentUser.uid, selectedUserId);
             const messagesRef = ref(database, `chats/${chatId}/messages`);
-            // FIX: hapus deletedFor:{} — object kosong ditolak Firebase
-            // FIX: text selalu string agar tidak undefined
+            // FIXED: hapus deletedFor:{} — object kosong ditolak Firebase rules
             const messageData = {
                 senderId: currentUser.uid,
-                senderName: currentUserName,
+                senderName: currentUserName || currentUser.email.split('@')[0],
                 text: text || '',
                 timestamp: Date.now(),
                 isRead: false,
                 isDeleted: false
             };
+
+            console.log('📤 Sending message:', messageData);
+            console.log('📍 Chat ID:', chatId);
 
             try {
                 if (selectedMediaFile) {
@@ -819,11 +827,13 @@
                     messageData.mediaType = uploadResult.type;
                     document.getElementById('uploadProgress').style.display = 'none';
                 }
-                await push(messagesRef, messageData);
+                const pushResult = await push(messagesRef, messageData);
+                console.log('✅ Message pushed, key:', pushResult.key);
                 messageInput.value = '';
                 messageInput.focus();
                 cancelMediaPreview();
             } catch (error) {
+                console.error('❌ Push error:', error);
                 alert('❌ Gagal mengirim pesan: ' + error.message);
                 document.getElementById('uploadProgress').style.display = 'none';
             }
@@ -951,7 +961,6 @@
         window.deleteMessageForMe = function() {
             if (!selectedMessageId || !selectedUserId) return;
             const chatId = generateChatId(currentUser.uid, selectedUserId);
-            // FIX: update path spesifik, bukan set object deletedFor kosong
             const deletedForRef = ref(database, `chats/${chatId}/messages/${selectedMessageId}/deletedFor/${currentUser.uid}`);
             set(deletedForRef, true).then(() => { closeMessageMenu(); loadMessages(); });
         };
@@ -1366,8 +1375,6 @@
         };
 
     </script>
-
-    <!-- PENTING: chat-notes.js dimuat TERAKHIR setelah Firebase selesai -->
     <script src="chat-notes.js" defer></script>
 </body>
 </html>
