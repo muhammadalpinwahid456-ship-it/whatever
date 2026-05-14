@@ -6,7 +6,6 @@
     <title>ALVIN Chat</title>
     <link rel="stylesheet" href="chat.style.css">
     <link rel="stylesheet" href="chat-notes.css">
-    <script src="chat-notes.js"></script>
 </head>
 <body>
     <!-- AUTH CHECK -->
@@ -636,11 +635,12 @@
                         const userId = childSnapshot.key;
                         if (userId !== currentUser.uid) {
                             const userData = childSnapshot.val();
-                            if (userData && userData.fullname) {
+                            // FIX Bug 2: Terima user yang punya email atau fullname (bukan hanya fullname)
+                            if (userData && (userData.fullname || userData.email)) {
                                 allUsers.push({
                                     uid: userId,
-                                    name: userData.fullname,
-                                    email: userData.email,
+                                    name: userData.fullname || (userData.email ? userData.email.split('@')[0] : 'User'),
+                                    email: userData.email || '',
                                     photoURL: userData.photoURL || 'https://via.placeholder.com/40'
                                 });
                                 setupUnreadListener(userId);
@@ -803,7 +803,7 @@
             const messageData = {
                 senderId: currentUser.uid,
                 senderName: currentUserName,
-                text: text,
+                text: text || '',   // FIX Bug 3: selalu kirim string, bukan undefined
                 timestamp: Date.now(),
                 isRead: false,
                 isDeleted: false,
@@ -1370,5 +1370,8 @@
         };
 
     </script>
+
+    <!-- chat-notes.js dimuat TERAKHIR setelah Firebase module selesai init -->
+    <script src="chat-notes.js" defer></script>
 </body>
 </html>

@@ -13,7 +13,7 @@
     align-items: center;
 }
 
-.auth-modal.show {
+.auth-modal.active {
     display: flex;
 }
 
