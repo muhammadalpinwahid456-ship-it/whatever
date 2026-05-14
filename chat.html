@@ -635,11 +635,11 @@
                         const userId = childSnapshot.key;
                         if (userId !== currentUser.uid) {
                             const userData = childSnapshot.val();
-                            // FIX Bug 2: Terima user yang punya email atau fullname (bukan hanya fullname)
+                            // FIX: terima user yang punya email saja (login Google tanpa fullname)
                             if (userData && (userData.fullname || userData.email)) {
                                 allUsers.push({
                                     uid: userId,
-                                    name: userData.fullname || (userData.email ? userData.email.split('@')[0] : 'User'),
+                                    name: userData.fullname || userData.email.split('@')[0],
                                     email: userData.email || '',
                                     photoURL: userData.photoURL || 'https://via.placeholder.com/40'
                                 });
@@ -800,14 +800,15 @@
 
             const chatId = generateChatId(currentUser.uid, selectedUserId);
             const messagesRef = ref(database, `chats/${chatId}/messages`);
+            // FIX: hapus deletedFor:{} — object kosong ditolak Firebase
+            // FIX: text selalu string agar tidak undefined
             const messageData = {
                 senderId: currentUser.uid,
                 senderName: currentUserName,
-                text: text || '',   // FIX Bug 3: selalu kirim string, bukan undefined
+                text: text || '',
                 timestamp: Date.now(),
                 isRead: false,
-                isDeleted: false,
-                deletedFor: {}
+                isDeleted: false
             };
 
             try {
@@ -950,14 +951,9 @@
         window.deleteMessageForMe = function() {
             if (!selectedMessageId || !selectedUserId) return;
             const chatId = generateChatId(currentUser.uid, selectedUserId);
-            const messageRef = ref(database, `chats/${chatId}/messages/${selectedMessageId}`);
-            get(messageRef).then((snapshot) => {
-                if (snapshot.exists()) {
-                    const deletedFor = snapshot.val().deletedFor || {};
-                    deletedFor[currentUser.uid] = true;
-                    update(messageRef, { deletedFor }).then(() => { closeMessageMenu(); loadMessages(); });
-                }
-            });
+            // FIX: update path spesifik, bukan set object deletedFor kosong
+            const deletedForRef = ref(database, `chats/${chatId}/messages/${selectedMessageId}/deletedFor/${currentUser.uid}`);
+            set(deletedForRef, true).then(() => { closeMessageMenu(); loadMessages(); });
         };
 
         window.unsendMessage = function() {
@@ -1371,7 +1367,7 @@
 
     </script>
 
-    <!-- chat-notes.js dimuat TERAKHIR setelah Firebase module selesai init -->
+    <!-- PENTING: chat-notes.js dimuat TERAKHIR setelah Firebase selesai -->
     <script src="chat-notes.js" defer></script>
 </body>
 </html>
