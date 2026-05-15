@@ -17,6 +17,25 @@
             display: inline;
         }
 
+        /* ===== NOTE VIEWER MILIK SENDIRI: tombol Edit & Hapus ===== */
+        .own-note-edit-btn {
+            background: rgba(59, 130, 246, 0.15) !important;
+            border: 1px solid rgba(59, 130, 246, 0.35) !important;
+            color: #60a5fa !important;
+            font-weight: 600 !important;
+        }
+        .own-note-edit-btn:hover {
+            background: rgba(59, 130, 246, 0.28) !important;
+        }
+        .own-note-delete-btn {
+            background: rgba(239, 68, 68, 0.12) !important;
+            border: 1px solid rgba(239, 68, 68, 0.3) !important;
+            color: #f87171 !important;
+        }
+        .own-note-delete-btn:hover {
+            background: rgba(239, 68, 68, 0.25) !important;
+        }
+
         /* ===== NOTE QUOTE BUBBLE DI DALAM PESAN (Instagram-style) ===== */
         .msg-note-quote {
             display: flex;
@@ -1732,20 +1751,76 @@
             const storyItem = document.getElementById('myNoteStoryItem');
 
             if (!data || (!data.text && !data.youtubeId)) {
+                // Tidak ada note → klik buka modal edit
                 bubble.innerHTML = '<span class="note-bubble-empty">+ Catatan</span>';
                 storyItem.classList.remove('has-note');
+                storyItem.onclick = openNoteModal;
                 return;
             }
 
+            // Ada note → klik buka viewer (bisa putar musik + lihat lirik)
             storyItem.classList.add('has-note');
+            storyItem.onclick = openMyNoteViewer;
+
             let bubbleContent = '';
             if (data.youtubeId) {
-                bubbleContent += `<span class="note-bubble-music">🎵 ${data.text || 'Lagu'}</span>`;
+                bubbleContent = `<span class="note-bubble-music">🎵 ${escapeHtml(data.text || 'Lagu')}</span>`;
             } else if (data.text) {
-                bubbleContent += `<span class="note-bubble-text">${escapeHtml(data.text)}</span>`;
+                bubbleContent = `<span class="note-bubble-text">${escapeHtml(data.text)}</span>`;
             }
             bubble.innerHTML = bubbleContent;
         }
+
+        // Buka viewer untuk note MILIK SENDIRI
+        // Menampilkan player + lirik, dengan tombol Edit & Hapus sebagai pengganti DM/Like/Reply
+        window.openMyNoteViewer = function() {
+            if (!currentUser) return;
+            get(ref(database, `notes/${currentUser.uid}`)).then(snap => {
+                if (!snap.exists()) {
+                    // Note sudah tidak ada, buka modal edit saja
+                    openNoteModal();
+                    return;
+                }
+                const note = snap.val();
+                syncNoteGlobals();
+                viewingNoteUserId = currentUser.uid;
+
+                // Buka viewer standar dulu
+                window.instagramNoteViewer.open(currentUser.uid, note);
+
+                // Setelah modal muncul di DOM, patch tombol aksi untuk mode "pemilik"
+                requestAnimationFrame(() => {
+                    const modal = document.getElementById('insta-note-modal');
+                    if (!modal) return;
+
+                    // Ganti blok aksi (like/reply/DM) dengan tombol Edit + Hapus
+                    const actionsEl = modal.querySelector('.insta-note-actions');
+                    if (actionsEl) {
+                        actionsEl.innerHTML = `
+                            <button class="insta-action-btn own-note-edit-btn" onclick="window.instagramNoteViewer.close(); openNoteModal();">
+                                ✏️ Edit Catatan
+                            </button>
+                            <button class="insta-action-btn own-note-delete-btn" onclick="window.instagramNoteViewer.close(); deleteMyNote();">
+                                🗑️ Hapus
+                            </button>
+                        `;
+                    }
+
+                    // Sembunyikan kolom reply input (tidak perlu balas note sendiri)
+                    const replyWrap = modal.querySelector('.insta-reply-wrap');
+                    if (replyWrap) replyWrap.style.display = 'none';
+
+                    // Tambahkan label "Catatan kamu" di header
+                    const userInfo = modal.querySelector('.insta-user-info');
+                    if (userInfo) {
+                        const badge = document.createElement('div');
+                        badge.style.cssText = 'font-size:0.65rem;color:#60a5fa;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;margin-top:1px;';
+                        badge.textContent = 'Catatan kamu';
+                        userInfo.appendChild(badge);
+                    }
+                });
+            }).catch(err => console.error('Error opening own note viewer:', err));
+        };
 
         function loadNotesPanel() {
             if (!currentUser) return;
