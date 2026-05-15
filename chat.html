@@ -1196,37 +1196,35 @@
                         
                         const timeStr = formatTime(msg.timestamp);
                         
-                        let contentHtml = '';
-
-                        // Tampilkan quote note (mirip Instagram) jika pesan membalas note
+                        // Quote note (dirender terpisah, tidak ikut ditimpa oleh kondisi di bawah)
+                        let quoteHtml = '';
                         if (msg.noteReply && !msg.isDeleted && !msg.isUnsent) {
                             const nr = msg.noteReply;
                             if (nr.hasMusic) {
-                                // Ada lagu: tampilkan ikon vinyl + judul + artis
-                                contentHtml += `
+                                quoteHtml = `
                                     <div class="msg-note-quote msg-note-quote-music">
                                         <div class="mnq-icon">🎵</div>
                                         <div class="mnq-info">
-                                            <span class="mnq-label">${escapeHtml(nr.noteOwnerName || 'Catatan')}</span>
+                                            <span class="mnq-label">Membalas catatan musik · ${escapeHtml(nr.noteOwnerName || '')}</span>
                                             <span class="mnq-song">${escapeHtml(nr.songTitle || 'Lagu')}</span>
                                             ${nr.artistName ? `<span class="mnq-artist">${escapeHtml(nr.artistName)}</span>` : ''}
                                         </div>
                                     </div>
                                 `;
                             } else {
-                                // Hanya teks
-                                contentHtml += `
+                                quoteHtml = `
                                     <div class="msg-note-quote msg-note-quote-text">
                                         <div class="mnq-icon">📝</div>
                                         <div class="mnq-info">
-                                            <span class="mnq-label">${escapeHtml(nr.noteOwnerName || 'Catatan')}</span>
-                                            <span class="mnq-note-text">${escapeHtml(nr.noteText || '')}</span>
+                                            <span class="mnq-label">Membalas catatan · ${escapeHtml(nr.noteOwnerName || '')}</span>
+                                            <span class="mnq-note-text">"${escapeHtml(nr.noteText || '')}"</span>
                                         </div>
                                     </div>
                                 `;
                             }
                         }
-                        
+
+                        let contentHtml = '';
                         if (msg.isDeleted) {
                             contentHtml = '<p style="font-style: italic; color: #999;">🗑️ Pesan telah dihapus</p>';
                         } else if (msg.isUnsent) {
@@ -1251,6 +1249,9 @@
                         } else {
                             contentHtml = `<p>${escapeHtml(msg.text)}</p>`;
                         }
+
+                        // Gabungkan: quote di atas, isi pesan di bawah
+                        contentHtml = quoteHtml + contentHtml;
                         
                         let statusHtml = '';
                         if (msg.senderId === currentUser.uid) {
