@@ -27,121 +27,75 @@ class InstagramNoteViewer {
         return div.innerHTML;
     }
 
-    // ===== FETCH LYRICS dengan MULTIPLE SOURCES & BETTER ERROR HANDLING =====
+    // ===== AMBIL JUDUL VIDEO YOUTUBE =====
+    async fetchYouTubeTitle(videoId) {
+        if (!videoId) return '';
+        try {
+            // Gunakan oEmbed YouTube (tidak butuh API key)
+            const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+            if (!res.ok) return '';
+            const data = await res.json();
+            // Bersihkan judul dari "(Official Video)", "(Lyrics)", dll
+            let title = data.title || '';
+            title = title.replace(/\s*[\(\[].*(official|video|lyrics|audio|mv|music|lyric|ft\.|feat\.).*/gi, '').trim();
+            return title;
+        } catch (e) {
+            return '';
+        }
+    }
+
+    // ===== FETCH LYRICS dari LRCLIB =====
     async fetchLyrics(songTitle, artistName, videoId) {
         const cacheKey = videoId || (songTitle + artistName);
         if (this._lyricsCache[cacheKey]) {
-            console.log('📂 [CACHE] Using cached lyrics for:', cacheKey);
             return this._lyricsCache[cacheKey];
         }
 
-        const query = [songTitle, artistName].filter(Boolean).join(' ').trim();
-        if (!query) {
-            console.warn('⚠️ [LYRICS] Empty query, skipping fetch');
+        // Fallback: kalau songTitle kosong tapi ada videoId, ambil judul dari YouTube
+        let resolvedTitle = songTitle;
+        let resolvedArtist = artistName;
+        if (!resolvedTitle && videoId) {
+            const ytTitle = await this.fetchYouTubeTitle(videoId);
+            if (ytTitle) {
+                console.log('Fetched YouTube title as fallback:', ytTitle);
+                // Coba pisah "Artist - Song" atau pakai full title
+                const dashIdx = ytTitle.indexOf(' - ');
+                if (dashIdx > 0) {
+                    resolvedArtist = resolvedArtist || ytTitle.substring(0, dashIdx).trim();
+                    resolvedTitle = ytTitle.substring(dashIdx + 3).trim();
+                } else {
+                    resolvedTitle = ytTitle;
+                }
+            }
+        }
+
+        const query = [resolvedTitle, resolvedArtist].filter(Boolean).join(' ').trim();
+        if (!query) return [];
+        try {
+            console.log('Fetching lyrics:', query);
+            const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`);
+            if (!res.ok) return [];
+            const results = await res.json();
+            if (!results || results.length === 0) return [];
+
+            const chosen = results.find(r => r.syncedLyrics) || results[0];
+            let parsed = [];
+            if (chosen.syncedLyrics) {
+                parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
+            } else {
+                const d = await fetch(`https://lrclib.net/api/get/${chosen.id}`);
+                if (d.ok) {
+                    const detail = await d.json();
+                    if (detail.syncedLyrics) parsed = this.parseSyncedLyrics(detail.syncedLyrics);
+                    else if (detail.plainLyrics) parsed = this.parsePlainLyrics(detail.plainLyrics);
+                }
+            }
+            this._lyricsCache[cacheKey] = parsed;
+            return parsed;
+        } catch (err) {
+            console.error('Lyrics fetch error:', err);
             return [];
         }
-
-        console.log('🎵 [LYRICS] Fetching for:', query);
-
-        // Strategy 1: LRCLIB
-        try {
-            console.log('🔗 [LRCLIB] Searching...');
-            const res = await Promise.race([
-                fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('LRCLIB timeout')), 8000))
-            ]);
-
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            
-            const results = await res.json();
-            console.log('📊 [LRCLIB] Found results:', results?.length || 0);
-
-            if (results && results.length > 0) {
-                const chosen = results.find(r => r.syncedLyrics) || results[0];
-                console.log('📌 [LRCLIB] Chosen:', chosen.title, 'by', chosen.artist);
-
-                let parsed = [];
-                
-                // Jika punya syncedLyrics, parse langsung
-                if (chosen.syncedLyrics) {
-                    parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
-                    console.log('✅ [LRCLIB] Got synced lyrics:', parsed.length, 'lines');
-                } else {
-                    // Fetch detail untuk get syncedLyrics
-                    try {
-                        const detailRes = await Promise.race([
-                            fetch(`https://lrclib.net/api/get/${chosen.id}`),
-                            new Promise((_, reject) => setTimeout(() => reject(new Error('Detail timeout')), 5000))
-                        ]);
-                        
-                        if (detailRes.ok) {
-                            const detail = await detailRes.json();
-                            if (detail.syncedLyrics) {
-                                parsed = this.parseSyncedLyrics(detail.syncedLyrics);
-                                console.log('✅ [LRCLIB-DETAIL] Got lyrics:', parsed.length, 'lines');
-                            } else if (detail.plainLyrics) {
-                                parsed = this.parsePlainLyrics(detail.plainLyrics);
-                                console.log('✅ [LRCLIB-PLAIN] Got plain lyrics:', parsed.length, 'lines');
-                            }
-                        }
-                    } catch (detailErr) {
-                        console.warn('⚠️ [LRCLIB-DETAIL] Error:', detailErr.message);
-                    }
-                }
-
-                if (parsed.length > 0) {
-                    this._lyricsCache[cacheKey] = parsed;
-                    return parsed;
-                }
-            }
-        } catch (lrcErr) {
-            console.warn('⚠️ [LRCLIB] Failed:', lrcErr.message);
-        }
-
-        // Strategy 2: GENIUS API (Fallback)
-        try {
-            console.log('🔗 [GENIUS] Searching...');
-            const geniusRes = await Promise.race([
-                fetch(`https://api.genius.com/search?q=${encodeURIComponent(query)}&access_token=Bearer_YOUR_TOKEN`, {
-                    headers: { 'User-Agent': 'ALVIN-Chat' }
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('GENIUS timeout')), 5000))
-            ]);
-
-            if (geniusRes.ok) {
-                const geniusData = await geniusRes.json();
-                const hits = geniusData?.response?.hits || [];
-                console.log('📊 [GENIUS] Found:', hits.length);
-                
-                if (hits.length > 0) {
-                    // Genius biasanya tidak punya synced lyrics, tapi bisa ambil title
-                    const parsed = hits.slice(0, 10).map((hit, i) => ({
-                        time: i * 3,
-                        text: hit.result?.title || 'Line ' + (i + 1)
-                    }));
-                    console.log('✅ [GENIUS] Got titles:', parsed.length);
-                    this._lyricsCache[cacheKey] = parsed;
-                    return parsed;
-                }
-            }
-        } catch (geniusErr) {
-            console.warn('⚠️ [GENIUS] Failed:', geniusErr.message);
-        }
-
-        // Strategy 3: FALLBACK GENERATOR - Selalu berhasil!
-        console.log('💡 [FALLBACK] Generating simple lyrics...');
-        const fallbackLyrics = [
-            { time: 0, text: `♪ ${songTitle || 'Judul Lagu'}` },
-            { time: 2, text: `🎤 ${artistName || 'Artis'}` },
-            { time: 4, text: '🎵 Musik dimulai...' },
-            { time: 6, text: 'Nikmati lagunya! 🎧' },
-            { time: 8, text: '✨ Lirik tidak tersedia' },
-            { time: 10, text: 'Tapi musik tetap bagus! 🎶' }
-        ];
-
-        console.log('✅ [FALLBACK] Generated lyrics:', fallbackLyrics.length, 'lines');
-        this._lyricsCache[cacheKey] = fallbackLyrics;
-        return fallbackLyrics;
     }
 
     parseSyncedLyrics(raw) {
@@ -165,18 +119,15 @@ class InstagramNoteViewer {
     renderLyrics(currentTime) {
         const container = document.getElementById('insta-lyrics-container');
         if (!container) return;
-        
         if (this.lyrics.length === 0) {
             container.innerHTML = '<p class="no-lyrics-message">😔 Lirik tidak tersedia</p>';
             return;
         }
-
         let activeIdx = 0;
         for (let i = 0; i < this.lyrics.length; i++) {
             if (currentTime >= this.lyrics[i].time) activeIdx = i;
             else break;
         }
-
         container.innerHTML = '';
         this.lyrics.forEach((line, i) => {
             const el = document.createElement('div');
@@ -184,7 +135,6 @@ class InstagramNoteViewer {
             el.textContent = line.text;
             container.appendChild(el);
         });
-
         // Scroll baris aktif ke tengah (Instagram style)
         const activeEl = container.querySelectorAll('.lyrics-line')[activeIdx];
         if (activeEl) {
@@ -196,27 +146,13 @@ class InstagramNoteViewer {
     // ===== YOUTUBE IFRAME API =====
     loadYouTubeAPI() {
         return new Promise((resolve) => {
-            if (window.YT && window.YT.Player) { 
-                resolve(); 
-                return; 
-            }
-            
+            if (window.YT && window.YT.Player) { resolve(); return; }
             if (this.ytApiLoading) {
-                const chk = setInterval(() => { 
-                    if (window.YT && window.YT.Player) { 
-                        clearInterval(chk); 
-                        resolve(); 
-                    } 
-                }, 100);
+                const chk = setInterval(() => { if (window.YT && window.YT.Player) { clearInterval(chk); resolve(); } }, 100);
                 return;
             }
-
             this.ytApiLoading = true;
-            window.onYouTubeIframeAPIReady = () => { 
-                this.ytApiLoading = false; 
-                resolve(); 
-            };
-
+            window.onYouTubeIframeAPIReady = () => { this.ytApiLoading = false; resolve(); };
             const tag = document.createElement('script');
             tag.src = 'https://www.youtube.com/iframe_api';
             document.head.appendChild(tag);
@@ -229,37 +165,25 @@ class InstagramNoteViewer {
             try { this.youtubePlayer.destroy(); } catch(e) {}
         }
         this.youtubePlayer = null;
-
         return new Promise((resolve) => {
             this.youtubePlayer = new YT.Player('insta-yt-player', {
-                height: '1',
-                width: '1',
-                videoId,
+                height: '1', width: '1', videoId,
                 playerVars: { autoplay: 0, controls: 0, origin: location.origin },
                 events: {
                     onReady: (e) => {
                         this.duration = e.target.getDuration();
                         const durEl = document.getElementById('insta-duration');
                         if (durEl) durEl.textContent = this.formatTime(this.duration);
-                        console.log('✅ [PLAYER] Ready, duration:', this.formatTime(this.duration));
                         resolve();
                     },
                     onStateChange: (e) => {
                         if (e.data === YT.PlayerState.PLAYING) {
-                            this.isPlaying = true;
-                            this._tick();
-                            this._updatePlayBtn(true);
+                            this.isPlaying = true; this._tick(); this._updatePlayBtn(true);
                         } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.ENDED) {
-                            this.isPlaying = false;
-                            cancelAnimationFrame(this.animationFrameId);
-                            this._updatePlayBtn(false);
+                            this.isPlaying = false; cancelAnimationFrame(this.animationFrameId); this._updatePlayBtn(false);
                         }
                     },
-                    onError: (e) => {
-                        console.error('❌ [PLAYER] Error:', e.data);
-                        this._fallback(videoId);
-                        resolve();
-                    }
+                    onError: (e) => { console.error('YT error:', e.data); this._fallback(videoId); resolve(); }
                 }
             });
         });
@@ -272,19 +196,11 @@ class InstagramNoteViewer {
 
     _tick() {
         if (!this.youtubePlayer || !this.isPlaying) return;
-        
-        try { 
-            this.currentTime = this.youtubePlayer.getCurrentTime() || 0; 
-        } catch(e) { 
-            return; 
-        }
-
+        try { this.currentTime = this.youtubePlayer.getCurrentTime() || 0; } catch(e) { return; }
         const ctEl = document.getElementById('insta-current-time');
         if (ctEl) ctEl.textContent = this.formatTime(this.currentTime);
-
         const prog = document.getElementById('insta-progress');
         if (prog && this.duration > 0) prog.style.width = ((this.currentTime / this.duration) * 100) + '%';
-
         this.renderLyrics(this.currentTime);
         this.animationFrameId = requestAnimationFrame(() => this._tick());
     }
@@ -305,12 +221,9 @@ class InstagramNoteViewer {
 
     // ===== BUKA MODAL =====
     async open(userId, note) {
-        console.log('📂 [MODAL] Opening note for userId:', userId);
         this.close();
         this.currentNote = { userId, ...note };
-        this.isPlaying = false;
-        this.currentTime = 0;
-        this.lyrics = [];
+        this.isPlaying = false; this.currentTime = 0; this.lyrics = [];
 
         const modal = document.createElement('div');
         modal.id = 'insta-note-modal';
@@ -319,25 +232,19 @@ class InstagramNoteViewer {
         document.body.appendChild(modal);
         modal.addEventListener('click', (e) => { if (e.target === modal) this.close(); });
 
+        // songTitle: prioritaskan field songTitle, fallback ke text, terakhir biarkan kosong
+        // supaya fetchLyrics bisa fetch dari YouTube title pakai videoId
         const songTitle = note.songTitle || note.text || '';
         const artistName = note.artistName || '';
 
         // Fetch lyrics dan init player secara paralel
-        console.log('⏳ [MODAL] Fetching lyrics and initializing player...');
         const [lyrics] = await Promise.all([
-            this.fetchLyrics(songTitle, artistName, note.youtubeId).catch(err => {
-                console.error('❌ [LYRICS-FETCH] Error:', err);
-                return [];
-            }),
-            note.youtubeId ? this.initPlayer(note.youtubeId).catch(err => {
-                console.error('❌ [PLAYER-INIT] Error:', err);
-                this._fallback(note.youtubeId);
-            }) : Promise.resolve()
+            this.fetchLyrics(songTitle, artistName, note.youtubeId || note.youtubeUrl),
+            note.youtubeId ? this.initPlayer(note.youtubeId).catch(e => { console.error(e); this._fallback(note.youtubeId); }) : Promise.resolve()
         ]);
 
         this.lyrics = lyrics || [];
         this.renderLyrics(0);
-        console.log('✅ [MODAL] Note viewer ready, lyrics loaded:', this.lyrics.length);
     }
 
     _buildHTML(userId, note) {
@@ -438,7 +345,7 @@ class InstagramNoteViewer {
                 btn.className = `insta-action-btn ${liked?'liked':''}`;
                 btn.innerHTML = `${liked?'❤️':'🤍'} <span id="insta-like-count">${count}</span> Suka`;
             }
-        } catch(err) { console.error('❌ Like error:', err); }
+        } catch(err) { console.error('Like error:', err); }
     }
 
     _focusReply() {
@@ -456,8 +363,7 @@ class InstagramNoteViewer {
                 userId: window._currentUserId,
                 userName: window._currentUserName || 'User',
                 userPhoto: window._currentUserPhoto || '',
-                text,
-                timestamp: Date.now()
+                text, timestamp: Date.now()
             });
             if (input) input.value = '';
         } catch(err) { alert('❌ Gagal kirim balasan: ' + err.message); }
@@ -466,27 +372,24 @@ class InstagramNoteViewer {
     _replyViaDM(userId) {
         if (!this.currentNote) return;
         const note = this.currentNote;
+        // Tutup modal note dulu
         this.close();
+        // Cari data user dari allUsers atau Firebase, lalu buka DM
         if (window.openDMWithNote) {
             window.openDMWithNote(userId, note);
         } else {
-            console.warn('⚠️ openDMWithNote not available');
+            console.warn('openDMWithNote not available');
         }
     }
 
     close() {
         cancelAnimationFrame(this.animationFrameId);
         this.isPlaying = false;
-        if (this.youtubePlayer) { 
-            try { this.youtubePlayer.stopVideo(); } catch(e) {} 
-        }
+        if (this.youtubePlayer) { try { this.youtubePlayer.stopVideo(); } catch(e) {} }
         const modal = document.getElementById('insta-note-modal');
         if (modal) modal.remove();
-        this.lyrics = [];
-        this.currentTime = 0;
-        console.log('✅ [MODAL] Closed');
+        this.lyrics = []; this.currentTime = 0;
     }
 }
 
 window.instagramNoteViewer = new InstagramNoteViewer();
-console.log('✅ [INIT] InstagramNoteViewer initialized');
