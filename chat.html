@@ -16,6 +16,212 @@
         .note-sub .note-expires {
             display: inline;
         }
+
+        /* ===== NOTE QUOTE BUBBLE DI DALAM PESAN (Instagram-style) ===== */
+        .msg-note-quote {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 10px;
+            border-radius: 10px;
+            margin-bottom: 6px;
+            max-width: 240px;
+            position: relative;
+        }
+        .msg-note-quote::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            border-radius: 3px 0 0 3px;
+        }
+        .msg-note-quote-music {
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+        }
+        .msg-note-quote-music::before {
+            background: #3b82f6;
+        }
+        .msg-note-quote-text {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .msg-note-quote-text::before {
+            background: #64748b;
+        }
+        .mnq-icon {
+            font-size: 1.3rem;
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.2);
+        }
+        .msg-note-quote-music .mnq-icon {
+            background: linear-gradient(135deg, #1e3a6e, #1e40af);
+            box-shadow: 0 0 8px rgba(59,130,246,0.35);
+        }
+        .mnq-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 0;
+        }
+        .mnq-label {
+            font-size: 0.65rem;
+            color: #60a5fa;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .msg-note-quote-text .mnq-label {
+            color: #94a3b8;
+        }
+        .mnq-song {
+            font-size: 0.82rem;
+            color: #e2e8f0;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mnq-artist {
+            font-size: 0.72rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .mnq-note-text {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-style: italic;
+        }
+        .nrb-v2 {
+            background: linear-gradient(135deg, #1a2540 0%, #111827 100%);
+            border-top: 1px solid rgba(59,130,246,0.2);
+            border-left: 3px solid #3b82f6;
+            padding: 10px 14px;
+            flex-shrink: 0;
+            animation: nrbSlideIn 0.2s ease;
+        }
+        @keyframes nrbSlideIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .nrb-inner {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .nrb-body {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+        }
+        /* Ikon musik berputar */
+        .nrb-music-icon {
+            font-size: 1.4rem;
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #1d3461, #1e40af);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 10px rgba(59,130,246,0.4);
+            transition: transform 0.05s linear;
+        }
+        /* Ikon teks biasa */
+        .nrb-text-icon {
+            font-size: 1.2rem;
+            flex-shrink: 0;
+            width: 36px;
+            height: 36px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .nrb-info {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 0;
+        }
+        .nrb-label {
+            font-size: 0.68rem;
+            color: #60a5fa;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .nrb-song-title {
+            font-size: 0.88rem;
+            color: #f0f6ff;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .nrb-artist {
+            font-size: 0.76rem;
+            color: #94a3b8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .nrb-note-text {
+            font-size: 0.74rem;
+            color: #64748b;
+            font-style: italic;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Teks saja (tanpa musik) */
+        .nrb-note-text-only {
+            font-size: 0.86rem;
+            color: #cbd5e1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        /* Tombol close */
+        .nrb-close {
+            background: none;
+            border: none;
+            color: #475569;
+            font-size: 1rem;
+            cursor: pointer;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: background 0.15s, color 0.15s;
+        }
+        .nrb-close:hover {
+            background: rgba(255,255,255,0.08);
+            color: #e2e8f0;
+        }
     </style>
 </head>
 <body>
@@ -991,6 +1197,35 @@
                         const timeStr = formatTime(msg.timestamp);
                         
                         let contentHtml = '';
+
+                        // Tampilkan quote note (mirip Instagram) jika pesan membalas note
+                        if (msg.noteReply && !msg.isDeleted && !msg.isUnsent) {
+                            const nr = msg.noteReply;
+                            if (nr.hasMusic) {
+                                // Ada lagu: tampilkan ikon vinyl + judul + artis
+                                contentHtml += `
+                                    <div class="msg-note-quote msg-note-quote-music">
+                                        <div class="mnq-icon">🎵</div>
+                                        <div class="mnq-info">
+                                            <span class="mnq-label">${escapeHtml(nr.noteOwnerName || 'Catatan')}</span>
+                                            <span class="mnq-song">${escapeHtml(nr.songTitle || 'Lagu')}</span>
+                                            ${nr.artistName ? `<span class="mnq-artist">${escapeHtml(nr.artistName)}</span>` : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            } else {
+                                // Hanya teks
+                                contentHtml += `
+                                    <div class="msg-note-quote msg-note-quote-text">
+                                        <div class="mnq-icon">📝</div>
+                                        <div class="mnq-info">
+                                            <span class="mnq-label">${escapeHtml(nr.noteOwnerName || 'Catatan')}</span>
+                                            <span class="mnq-note-text">${escapeHtml(nr.noteText || '')}</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        }
                         
                         if (msg.isDeleted) {
                             contentHtml = '<p style="font-style: italic; color: #999;">🗑️ Pesan telah dihapus</p>';
@@ -1073,6 +1308,17 @@
                 isDeleted: false
             };
 
+            // Jika membalas note, simpan konteks note ke pesan
+            if (_noteReplyContext) {
+                messageData.noteReply = {
+                    hasMusic: !!_noteReplyContext.youtubeId,
+                    songTitle: _noteReplyContext.songTitle || _noteReplyContext.text || '',
+                    artistName: _noteReplyContext.artistName || '',
+                    noteText: _noteReplyContext.text || '',
+                    noteOwnerName: _noteReplyContext.userName || ''
+                };
+            }
+
             try {
                 if (selectedMediaFile) {
                     document.getElementById('uploadProgress').style.display = 'flex';
@@ -1092,6 +1338,7 @@
                 messageInput.value = '';
                 messageInput.focus();
                 cancelMediaPreview();
+                cancelNoteReplyBanner(); // hapus banner setelah kirim
                 
             } catch (error) {
                 console.error('❌ Error sending message:', error);
@@ -1673,19 +1920,60 @@
             const old = document.getElementById('noteReplyBanner');
             if (old) old.remove();
 
-            const noteText = note.text || (note.youtubeId ? '🎵 Lagu' : 'Catatan');
+            const hasMusic = !!note.youtubeId;
+            const songTitle = note.songTitle || note.text || 'Lagu';
+            const artistName = note.artistName || '';
+            const noteText = note.text || '';
+
+            // Bangun konten banner sesuai tipe note
+            let bannerBody = '';
+            if (hasMusic) {
+                // Ada lagu: tampilkan ikon musik + judul + artis (mirip Instagram)
+                bannerBody = `
+                    <div class="nrb-music-icon" id="nrbMusicIcon">🎵</div>
+                    <div class="nrb-info">
+                        <span class="nrb-label">Membalas catatan musik</span>
+                        <span class="nrb-song-title">${escapeHtml(songTitle)}</span>
+                        ${artistName ? `<span class="nrb-artist">${escapeHtml(artistName)}</span>` : ''}
+                        ${noteText && noteText !== songTitle ? `<span class="nrb-note-text">"${escapeHtml(noteText)}"</span>` : ''}
+                    </div>
+                `;
+            } else {
+                // Hanya teks: tampilkan seperti quote reply biasa
+                bannerBody = `
+                    <div class="nrb-text-icon">📝</div>
+                    <div class="nrb-info">
+                        <span class="nrb-label">Membalas catatan</span>
+                        <span class="nrb-note-text-only">${escapeHtml(noteText || 'Catatan')}</span>
+                    </div>
+                `;
+            }
+
             const banner = document.createElement('div');
             banner.id = 'noteReplyBanner';
-            banner.className = 'note-reply-banner';
+            banner.className = 'note-reply-banner nrb-v2';
             banner.innerHTML = `
-                <div class="note-reply-banner-inner">
-                    <div class="note-reply-banner-text">
-                        <span class="note-reply-banner-label">✉️ Membalas catatan</span>
-                        <span class="note-reply-banner-content">${escapeHtml(noteText)}</span>
+                <div class="nrb-inner">
+                    <div class="nrb-body">
+                        ${bannerBody}
                     </div>
-                    <button class="note-reply-banner-close" onclick="cancelNoteReplyBanner()" title="Batal">✕</button>
+                    <button class="nrb-close" onclick="cancelNoteReplyBanner()" title="Batal">✕</button>
                 </div>
             `;
+
+            // Animasi ikon musik berputar jika ada lagu
+            if (hasMusic) {
+                let deg = 0;
+                const icon = banner.querySelector('#nrbMusicIcon');
+                const spin = setInterval(() => {
+                    deg += 3;
+                    if (icon && icon.isConnected) {
+                        icon.style.transform = `rotate(${deg}deg)`;
+                    } else {
+                        clearInterval(spin);
+                    }
+                }, 50);
+            }
 
             // Sisipkan di atas input-area
             const inputArea = document.querySelector('.input-area');
@@ -1693,10 +1981,12 @@
                 inputArea.parentNode.insertBefore(banner, inputArea);
             }
 
-            // Prefill pesan
+            // Update placeholder input
             const msgInput = document.getElementById('messageInput');
             if (msgInput) {
-                msgInput.placeholder = `Balas catatan: "${noteText}"`;
+                msgInput.placeholder = hasMusic
+                    ? `Balas lagu: "${songTitle}"...`
+                    : `Balas catatan: "${noteText || 'Catatan'}"...`;
                 msgInput.focus();
             }
 
