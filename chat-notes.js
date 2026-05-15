@@ -27,107 +27,39 @@ class InstagramNoteViewer {
         return div.innerHTML;
     }
 
-    // ===== FETCH LYRICS — multi-strategy dengan fallback =====
+    // ===== FETCH LYRICS dari LRCLIB =====
     async fetchLyrics(songTitle, artistName, videoId) {
-        const cacheKey = videoId || ((songTitle || '') + '|' + (artistName || ''));
-        if (this._lyricsCache[cacheKey] && this._lyricsCache[cacheKey].length > 0) {
+        const cacheKey = videoId || (songTitle + artistName);
+        if (this._lyricsCache[cacheKey]) {
             return this._lyricsCache[cacheKey];
         }
-
-        const cleanTitle  = (songTitle  || '').trim();
-        const cleanArtist = (artistName || '').trim();
-        if (!cleanTitle && !cleanArtist) return [];
-
-        console.log('🎵 Fetching lyrics for:', cleanTitle, '-', cleanArtist);
-
-        // --- Strategi 1: lrclib GET by title+artist (paling akurat) ---
-        if (cleanTitle) {
-            try {
-                const params = new URLSearchParams({ track_name: cleanTitle });
-                if (cleanArtist) params.set('artist_name', cleanArtist);
-                const res = await fetch(`https://lrclib.net/api/get?${params}`, { signal: AbortSignal.timeout(6000) });
-                if (res.ok) {
-                    const data = await res.json();
-                    let parsed = [];
-                    if (data.syncedLyrics) {
-                        parsed = this.parseSyncedLyrics(data.syncedLyrics);
-                    } else if (data.plainLyrics) {
-                        parsed = this.parsePlainLyrics(data.plainLyrics);
-                    }
-                    if (parsed.length > 0) {
-                        this._lyricsCache[cacheKey] = parsed;
-                        console.log('✅ Lyrics found (strategy 1 - exact match):', parsed.length, 'lines');
-                        return parsed;
-                    }
-                }
-            } catch (err) {
-                console.warn('lrclib GET failed:', err.message);
-            }
-        }
-
-        // --- Strategi 2: lrclib SEARCH (query gabungan) ---
+        const query = [songTitle, artistName].filter(Boolean).join(' ').trim();
+        if (!query) return [];
         try {
-            const query = [cleanTitle, cleanArtist].filter(Boolean).join(' ');
-            const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`, { signal: AbortSignal.timeout(6000) });
-            if (res.ok) {
-                const results = await res.json();
-                if (results && results.length > 0) {
-                    // Pilih yang punya synced lyrics dulu, atau yang paling cocok
-                    const chosen = results.find(r => r.syncedLyrics) || results[0];
-                    let parsed = [];
-                    if (chosen.syncedLyrics) {
-                        parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
-                    } else if (chosen.plainLyrics) {
-                        parsed = this.parsePlainLyrics(chosen.plainLyrics);
-                    } else {
-                        // Fetch detail
-                        const d = await fetch(`https://lrclib.net/api/get/${chosen.id}`, { signal: AbortSignal.timeout(5000) });
-                        if (d.ok) {
-                            const detail = await d.json();
-                            if (detail.syncedLyrics) parsed = this.parseSyncedLyrics(detail.syncedLyrics);
-                            else if (detail.plainLyrics) parsed = this.parsePlainLyrics(detail.plainLyrics);
-                        }
-                    }
-                    if (parsed.length > 0) {
-                        this._lyricsCache[cacheKey] = parsed;
-                        console.log('✅ Lyrics found (strategy 2 - search):', parsed.length, 'lines');
-                        return parsed;
-                    }
+            console.log('Fetching lyrics:', query);
+            const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`);
+            if (!res.ok) return [];
+            const results = await res.json();
+            if (!results || results.length === 0) return [];
+
+            const chosen = results.find(r => r.syncedLyrics) || results[0];
+            let parsed = [];
+            if (chosen.syncedLyrics) {
+                parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
+            } else {
+                const d = await fetch(`https://lrclib.net/api/get/${chosen.id}`);
+                if (d.ok) {
+                    const detail = await d.json();
+                    if (detail.syncedLyrics) parsed = this.parseSyncedLyrics(detail.syncedLyrics);
+                    else if (detail.plainLyrics) parsed = this.parsePlainLyrics(detail.plainLyrics);
                 }
             }
+            this._lyricsCache[cacheKey] = parsed;
+            return parsed;
         } catch (err) {
-            console.warn('lrclib search failed:', err.message);
+            console.error('Lyrics fetch error:', err);
+            return [];
         }
-
-        // --- Strategi 3: lrclib SEARCH hanya judul (tanpa artis) ---
-        if (cleanTitle && cleanArtist) {
-            try {
-                const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle)}`, { signal: AbortSignal.timeout(5000) });
-                if (res.ok) {
-                    const results = await res.json();
-                    if (results && results.length > 0) {
-                        const chosen = results.find(r => r.syncedLyrics) || results[0];
-                        let parsed = [];
-                        if (chosen.syncedLyrics) {
-                            parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
-                        } else if (chosen.plainLyrics) {
-                            parsed = this.parsePlainLyrics(chosen.plainLyrics);
-                        }
-                        if (parsed.length > 0) {
-                            this._lyricsCache[cacheKey] = parsed;
-                            console.log('✅ Lyrics found (strategy 3 - title only):', parsed.length, 'lines');
-                            return parsed;
-                        }
-                    }
-                }
-            } catch (err) {
-                console.warn('lrclib title-only search failed:', err.message);
-            }
-        }
-
-        console.warn('❌ Lyrics not found for:', cleanTitle, cleanArtist);
-        this._lyricsCache[cacheKey] = [];
-        return [];
     }
 
     parseSyncedLyrics(raw) {
@@ -268,26 +200,13 @@ class InstagramNoteViewer {
         const artistName = note.artistName || '';
 
         // Fetch lyrics dan init player secara paralel
-        const lyricsContainer = document.getElementById('insta-lyrics-container');
-
         const [lyrics] = await Promise.all([
             this.fetchLyrics(songTitle, artistName, note.youtubeId),
             note.youtubeId ? this.initPlayer(note.youtubeId).catch(e => { console.error(e); this._fallback(note.youtubeId); }) : Promise.resolve()
         ]);
 
         this.lyrics = lyrics || [];
-
-        if (this.lyrics.length === 0 && lyricsContainer) {
-            // Tampilkan pesan + tombol retry yang jelas
-            lyricsContainer.innerHTML = `
-                <div style="text-align:center; padding: 20px 10px;">
-                    <p style="color:#888; font-size:0.9rem; margin-bottom:12px;">😔 Lirik tidak tersedia</p>
-                    <p style="color:#555; font-size:0.75rem; margin-bottom:14px;">"${this.escapeHtml(songTitle)}"<br>tidak ditemukan di database lirik</p>
-                    <button onclick="window.instagramNoteViewer._retryLyrics()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:20px;font-size:0.8rem;cursor:pointer;">🔄 Coba Lagi</button>
-                </div>`;
-        } else {
-            this.renderLyrics(0);
-        }
+        this.renderLyrics(0);
     }
 
     _buildHTML(userId, note) {
@@ -422,33 +341,6 @@ class InstagramNoteViewer {
             window.openDMWithNote(userId, note);
         } else {
             console.warn('openDMWithNote not available');
-        }
-    }
-
-    async _retryLyrics() {
-        if (!this.currentNote) return;
-        const container = document.getElementById('insta-lyrics-container');
-        if (container) container.innerHTML = '<p class="no-lyrics-message">⏳ Mencari lirik...</p>';
-
-        const { songTitle, artistName, youtubeId, text } = this.currentNote;
-        const title  = songTitle  || text || '';
-        const artist = artistName || '';
-
-        // Clear cache agar fetch ulang
-        const cacheKey = youtubeId || (title + '|' + artist);
-        delete this._lyricsCache[cacheKey];
-
-        const lyrics = await this.fetchLyrics(title, artist, youtubeId);
-        this.lyrics = lyrics || [];
-
-        if (this.lyrics.length === 0 && container) {
-            container.innerHTML = `
-                <div style="text-align:center; padding: 20px 10px;">
-                    <p style="color:#888; font-size:0.9rem; margin-bottom:12px;">😔 Lirik tetap tidak tersedia</p>
-                    <p style="color:#555; font-size:0.75rem;">Kemungkinan lagu ini belum ada di database lirik</p>
-                </div>`;
-        } else {
-            this.renderLyrics(this.currentTime || 0);
         }
     }
 
