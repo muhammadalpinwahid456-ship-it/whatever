@@ -27,75 +27,64 @@ class InstagramNoteViewer {
         return div.innerHTML;
     }
 
-    // ===== AMBIL JUDUL VIDEO YOUTUBE =====
-    async fetchYouTubeTitle(videoId) {
-        if (!videoId) return '';
-        try {
-            // Gunakan oEmbed YouTube (tidak butuh API key)
-            const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
-            if (!res.ok) return '';
-            const data = await res.json();
-            // Bersihkan judul dari "(Official Video)", "(Lyrics)", dll
-            let title = data.title || '';
-            title = title.replace(/\s*[\(\[].*(official|video|lyrics|audio|mv|music|lyric|ft\.|feat\.).*/gi, '').trim();
-            return title;
-        } catch (e) {
-            return '';
-        }
-    }
-
-    // ===== FETCH LYRICS dari LRCLIB =====
+    // ===== FETCH LYRICS =====
+    // lrclib.net SSL expired → pakai CORS proxy sebagai perantara
     async fetchLyrics(songTitle, artistName, videoId) {
-        const cacheKey = videoId || (songTitle + artistName);
-        if (this._lyricsCache[cacheKey]) {
+        const cacheKey = videoId || ((songTitle || '') + (artistName || ''));
+        if (this._lyricsCache[cacheKey] !== undefined) {
             return this._lyricsCache[cacheKey];
         }
 
-        // Fallback: kalau songTitle kosong tapi ada videoId, ambil judul dari YouTube
-        let resolvedTitle = songTitle;
-        let resolvedArtist = artistName;
-        if (!resolvedTitle && videoId) {
-            const ytTitle = await this.fetchYouTubeTitle(videoId);
-            if (ytTitle) {
-                console.log('Fetched YouTube title as fallback:', ytTitle);
-                // Coba pisah "Artist - Song" atau pakai full title
-                const dashIdx = ytTitle.indexOf(' - ');
-                if (dashIdx > 0) {
-                    resolvedArtist = resolvedArtist || ytTitle.substring(0, dashIdx).trim();
-                    resolvedTitle = ytTitle.substring(dashIdx + 3).trim();
-                } else {
-                    resolvedTitle = ytTitle;
-                }
-            }
-        }
-
-        const query = [resolvedTitle, resolvedArtist].filter(Boolean).join(' ').trim();
-        if (!query) return [];
-        try {
-            console.log('Fetching lyrics:', query);
-            const res = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(query)}`);
-            if (!res.ok) return [];
-            const results = await res.json();
-            if (!results || results.length === 0) return [];
-
-            const chosen = results.find(r => r.syncedLyrics) || results[0];
-            let parsed = [];
-            if (chosen.syncedLyrics) {
-                parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
-            } else {
-                const d = await fetch(`https://lrclib.net/api/get/${chosen.id}`);
-                if (d.ok) {
-                    const detail = await d.json();
-                    if (detail.syncedLyrics) parsed = this.parseSyncedLyrics(detail.syncedLyrics);
-                    else if (detail.plainLyrics) parsed = this.parsePlainLyrics(detail.plainLyrics);
-                }
-            }
-            this._lyricsCache[cacheKey] = parsed;
-            return parsed;
-        } catch (err) {
-            console.error('Lyrics fetch error:', err);
+        if (!songTitle && !artistName) {
+            this._lyricsCache[cacheKey] = [];
             return [];
         }
+
+        // Variasi query: coba yang paling spesifik dulu
+        const queries = [];
+        if (songTitle && artistName) queries.push(`${songTitle} ${artistName}`);
+        if (songTitle) queries.push(songTitle);
+
+        // Daftar proxy/URL yang dicoba berurutan
+        // corsproxy.io → allorigins → langsung (kalau SSL tiba-tiba fix)
+        const buildUrls = (query) => [
+            `https://corsproxy.io/?url=${encodeURIComponent('https://lrclib.net/api/search?q=' + encodeURIComponent(query))}`,
+            `https://api.allorigins.win/raw?url=${encodeURIComponent('https://lrclib.net/api/search?q=' + encodeURIComponent(query))}`,
+            `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`,
+        ];
+
+        for (const query of queries) {
+            for (const url of buildUrls(query)) {
+                try {
+                    console.log('Fetching lyrics:', url);
+                    const res = await fetch(url);
+                    if (!res.ok) continue;
+
+                    const results = await res.json();
+                    if (!results || results.length === 0) continue;
+
+                    const chosen = results.find(r => r.syncedLyrics) || results.find(r => r.plainLyrics) || results[0];
+                    if (!chosen) continue;
+
+                    let parsed = [];
+                    if (chosen.syncedLyrics) {
+                        parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
+                    } else if (chosen.plainLyrics) {
+                        parsed = this.parsePlainLyrics(chosen.plainLyrics);
+                    }
+
+                    if (parsed.length > 0) {
+                        this._lyricsCache[cacheKey] = parsed;
+                        return parsed;
+                    }
+                } catch (err) {
+                    console.warn('Lyrics fetch failed:', url, err.message);
+                }
+            }
+        }
+
+        this._lyricsCache[cacheKey] = [];
+        return [];
     }
 
     parseSyncedLyrics(raw) {
@@ -232,14 +221,12 @@ class InstagramNoteViewer {
         document.body.appendChild(modal);
         modal.addEventListener('click', (e) => { if (e.target === modal) this.close(); });
 
-        // songTitle: prioritaskan field songTitle, fallback ke text, terakhir biarkan kosong
-        // supaya fetchLyrics bisa fetch dari YouTube title pakai videoId
         const songTitle = note.songTitle || note.text || '';
         const artistName = note.artistName || '';
 
         // Fetch lyrics dan init player secara paralel
         const [lyrics] = await Promise.all([
-            this.fetchLyrics(songTitle, artistName, note.youtubeId || note.youtubeUrl),
+            this.fetchLyrics(songTitle, artistName, note.youtubeId),
             note.youtubeId ? this.initPlayer(note.youtubeId).catch(e => { console.error(e); this._fallback(note.youtubeId); }) : Promise.resolve()
         ]);
 
