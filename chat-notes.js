@@ -27,9 +27,10 @@ class InstagramNoteViewer {
         return div.innerHTML;
     }
 
-    // ===== FETCH LYRICS =====
-    // lrclib.net SSL expired → pakai CORS proxy sebagai perantara
+    // ===== FETCH LYRICS via Cloudflare Worker (lyrics.ovh) =====
     async fetchLyrics(songTitle, artistName, videoId) {
+        const WORKER_URL = 'https://delicate-boat-b40d.alpinwahid516.workers.dev';
+
         const cacheKey = videoId || ((songTitle || '') + (artistName || ''));
         if (this._lyricsCache[cacheKey] !== undefined) {
             return this._lyricsCache[cacheKey];
@@ -40,46 +41,30 @@ class InstagramNoteViewer {
             return [];
         }
 
-        // Variasi query: coba yang paling spesifik dulu
-        const queries = [];
-        if (songTitle && artistName) queries.push(`${songTitle} ${artistName}`);
-        if (songTitle) queries.push(songTitle);
+        // Coba beberapa kombinasi artist/title
+        const attempts = [];
+        if (songTitle && artistName) attempts.push({ artist: artistName, title: songTitle });
+        if (songTitle) attempts.push({ artist: songTitle, title: artistName || '' });
 
-        // Daftar proxy/URL yang dicoba berurutan
-        // corsproxy.io → allorigins → langsung (kalau SSL tiba-tiba fix)
-        const buildUrls = (query) => [
-            `https://corsproxy.io/?url=${encodeURIComponent('https://lrclib.net/api/search?q=' + encodeURIComponent(query))}`,
-            `https://api.allorigins.win/raw?url=${encodeURIComponent('https://lrclib.net/api/search?q=' + encodeURIComponent(query))}`,
-            `https://lrclib.net/api/search?q=${encodeURIComponent(query)}`,
-        ];
+        for (const { artist, title } of attempts) {
+            try {
+                console.log('Fetching lyrics:', artist, '-', title);
+                const res = await fetch(
+                    `${WORKER_URL}/?artist=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}`
+                );
+                if (!res.ok) continue;
 
-        for (const query of queries) {
-            for (const url of buildUrls(query)) {
-                try {
-                    console.log('Fetching lyrics:', url);
-                    const res = await fetch(url);
-                    if (!res.ok) continue;
+                const data = await res.json();
+                // lyrics.ovh returns { lyrics: "..." }
+                if (!data.lyrics) continue;
 
-                    const results = await res.json();
-                    if (!results || results.length === 0) continue;
-
-                    const chosen = results.find(r => r.syncedLyrics) || results.find(r => r.plainLyrics) || results[0];
-                    if (!chosen) continue;
-
-                    let parsed = [];
-                    if (chosen.syncedLyrics) {
-                        parsed = this.parseSyncedLyrics(chosen.syncedLyrics);
-                    } else if (chosen.plainLyrics) {
-                        parsed = this.parsePlainLyrics(chosen.plainLyrics);
-                    }
-
-                    if (parsed.length > 0) {
-                        this._lyricsCache[cacheKey] = parsed;
-                        return parsed;
-                    }
-                } catch (err) {
-                    console.warn('Lyrics fetch failed:', url, err.message);
+                const parsed = this.parsePlainLyrics(data.lyrics);
+                if (parsed.length > 0) {
+                    this._lyricsCache[cacheKey] = parsed;
+                    return parsed;
                 }
+            } catch (err) {
+                console.warn('Lyrics fetch error:', err.message);
             }
         }
 
@@ -101,7 +86,14 @@ class InstagramNoteViewer {
     }
 
     parsePlainLyrics(raw) {
-        return raw.split('\n').filter(l => l.trim()).map((text, i) => ({ time: i * 4, text: text.trim() }));
+        const lines = raw.split('\n').filter(l => l.trim());
+        let time = 0;
+        return lines.map(text => {
+            const entry = { time, text: text.trim() };
+            // Estimasi durasi per baris berdasarkan panjang teks (minimal 2 detik, max 5 detik)
+            time += Math.min(5, Math.max(2, text.length / 12));
+            return entry;
+        });
     }
 
     // ===== RENDER LYRICS dengan scroll aktif ke tengah =====
