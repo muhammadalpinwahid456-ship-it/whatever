@@ -221,6 +221,34 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        /* ===== INSTAGRAM READ RECEIPT ===== */
+        .read-receipt-row {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 5px;
+            padding: 2px 14px 6px;
+            animation: receiptFadeIn 0.3s ease;
+        }
+        @keyframes receiptFadeIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .receipt-avatar {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1.5px solid #3b82f6;
+            flex-shrink: 0;
+        }
+        .receipt-label {
+            font-size: 0.68rem;
+            color: #6b7280;
+            font-weight: 400;
+            white-space: nowrap;
+        }
+
         /* Tombol close */
         .nrb-close {
             background: none;
@@ -1272,13 +1300,10 @@
                         // Gabungkan: quote di atas, isi pesan di bawah
                         contentHtml = quoteHtml + contentHtml;
                         
-                        let statusHtml = '';
-                        if (msg.senderId === currentUser.uid) {
-                            statusHtml = `<span class="message-status"><span class="tick ${msg.isRead ? 'read' : ''}">✔✔</span></span>`;
-                        }
-                        
+                        const isSentByMe = msg.senderId === currentUser.uid;
+
                         messageElement.innerHTML = `
-                            <div class="message-bubble" 
+                            <div class="message-bubble"
                                 data-message-key="${msg.key}"
                                 data-sender-id="${msg.senderId}"
                                 data-is-unsent="${msg.isUnsent ? 'true' : 'false'}"
@@ -1286,19 +1311,68 @@
                                 ${contentHtml}
                                 <span class="message-time">
                                     ${timeStr}
-                                    ${statusHtml}
+                                    ${isSentByMe ? `<span class="tick ${msg.isRead ? 'read' : ''}">✔✔</span>` : ''}
                                 </span>
                             </div>
                         `;
+                        // tandai elemen agar bisa dicari nanti untuk read-receipt
+                        if (isSentByMe) {
+                            messageElement.dataset.isRead = msg.isRead ? '1' : '0';
+                            messageElement.dataset.readAt = msg.readAt || '';
+                        }
                         messagesArea.appendChild(messageElement);
                     });
 
                     messagesArea.scrollTop = messagesArea.scrollHeight;
+
+                    // ===== INSTAGRAM-STYLE READ RECEIPT =====
+                    renderReadReceipt(messages);
                 }
             }, (error) => {
                 console.error('❌ Error loading messages:', error);
                 alert('Error memuat pesan: ' + error.message);
             });
+        }
+
+        // ===== INSTAGRAM READ RECEIPT =====
+        // Tampilkan foto + "Dilihat X menit yang lalu" di bawah pesan terakhir yang dibaca
+        function renderReadReceipt(messages) {
+            // Hapus receipt lama
+            document.querySelectorAll('.read-receipt-row').forEach(el => el.remove());
+
+            if (!selectedUserId) return;
+
+            // Cari foto penerima (user yang sedang di-chat)
+            const otherUser = allUsers.find(u => u.uid === selectedUserId);
+            const otherPhoto = otherUser ? otherUser.photoURL : 'https://via.placeholder.com/18';
+
+            // Cari pesan terakhir milik currentUser yang sudah dibaca oleh penerima
+            let lastReadMsg = null;
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const m = messages[i];
+                const deletedForMe = m.deletedFor && m.deletedFor[currentUser.uid];
+                if (m.senderId === currentUser.uid && m.isRead && !m.isUnsent && !m.isDeleted && !deletedForMe) {
+                    lastReadMsg = m;
+                    break;
+                }
+            }
+
+            if (!lastReadMsg) return;
+
+            // Cari elemen DOM pesan tersebut
+            const msgEl = document.querySelector(`.message[data-message-id="${lastReadMsg.key}"]`);
+            if (!msgEl) return;
+
+            // Buat row receipt
+            const receipt = document.createElement('div');
+            receipt.className = 'read-receipt-row';
+            receipt.innerHTML = `
+                <img src="${otherPhoto}" class="receipt-avatar" title="Sudah dibaca" onerror="this.src='https://via.placeholder.com/18'">
+                <span class="receipt-label">${formatReadTime(lastReadMsg.readAt)}</span>
+            `;
+
+            // Sisipkan SETELAH elemen pesan tersebut
+            msgEl.after(receipt);
         }
 
         // Send message
@@ -1419,19 +1493,38 @@
             console.log('✅ Media downloaded');
         };
 
-        // Mark messages as read
+        // Mark messages as read + simpan readAt timestamp
         function markAsRead(chatId) {
             const messagesRef = ref(database, `chats/${chatId}/messages`);
             get(messagesRef).then((snapshot) => {
                 if (snapshot.exists()) {
+                    const now = Date.now();
                     snapshot.forEach((child) => {
                         const msg = child.val();
                         if (msg.senderId !== currentUser.uid && !msg.isRead) {
-                            update(ref(database, `chats/${chatId}/messages/${child.key}`), { isRead: true });
+                            update(ref(database, `chats/${chatId}/messages/${child.key}`), {
+                                isRead: true,
+                                readAt: now
+                            });
                         }
                     });
                 }
             }).catch(err => console.error('❌ Error marking as read:', err));
+        }
+
+        // Format "Dilihat X menit yang lalu" — persis Instagram
+        function formatReadTime(readAt) {
+            if (!readAt) return 'Dilihat';
+            const diff = Date.now() - readAt;
+            const minutes = Math.floor(diff / 60000);
+            const hours = Math.floor(diff / 3600000);
+            const days = Math.floor(diff / 86400000);
+
+            if (diff < 60000) return 'Dilihat baru saja';
+            if (minutes < 60) return `Dilihat ${minutes} menit yang lalu`;
+            if (hours < 24) return `Dilihat ${hours} jam yang lalu`;
+            if (days === 1) return 'Dilihat kemarin';
+            return `Dilihat ${days} hari yang lalu`;
         }
 
         // Close chat
