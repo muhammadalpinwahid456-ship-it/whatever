@@ -518,3 +518,43 @@ body {
     text-align: center;
     z-index: 10;
 }
+
+/* DELETE REEL BUTTON */
+.btn-delete-reel {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.85);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.2s ease, transform 0.2s ease, background 0.2s ease;
+    z-index: 10;
+    line-height: 1;
+}
+
+.gallery-item:hover .btn-delete-reel {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.btn-delete-reel:hover {
+    background: rgba(220, 38, 38, 1) !important;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.5);
+    transform: scale(1.1) !important;
+}
+
+.btn-delete-reel:disabled {
+    background: rgba(100, 100, 100, 0.7) !important;
+    cursor: not-allowed;
+    transform: scale(1) !important;
+}
