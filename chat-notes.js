@@ -224,9 +224,17 @@ class InstagramNoteViewer {
         const songTitle = note.songTitle || note.text || '';
         const artistName = note.artistName || '';
 
-        // Fetch lyrics dan init player secara paralel
+        // Kalau lirik sudah tersimpan di Firebase, pakai langsung — skip fetch ke lrclib
+        let lyricsPromise;
+        if (note.lyrics && Array.isArray(note.lyrics) && note.lyrics.length > 0) {
+            console.log('Menggunakan lirik dari Firebase (cached)');
+            lyricsPromise = Promise.resolve(note.lyrics);
+        } else {
+            lyricsPromise = this.fetchLyrics(songTitle, artistName, note.youtubeId);
+        }
+
         const [lyrics] = await Promise.all([
-            this.fetchLyrics(songTitle, artistName, note.youtubeId),
+            lyricsPromise,
             note.youtubeId ? this.initPlayer(note.youtubeId).catch(e => { console.error(e); this._fallback(note.youtubeId); }) : Promise.resolve()
         ]);
 
