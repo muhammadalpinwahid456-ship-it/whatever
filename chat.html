@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ALVIN Chat</title>
     <link rel="stylesheet" href="chat.style.css">
+    <link rel="stylesheet" href="chat-notes.css">
 </head>
 <body>
     <!-- AUTH CHECK -->
@@ -749,6 +750,7 @@
                 setupMyPresence(user.uid);
                 loadCurrentUser();
                 loadAllUsers();
+                if (window.syncNoteGlobals) syncNoteGlobals();
             } else {
                 console.log('❌ User not logged in');
                 document.getElementById('authCheck').style.display = 'flex';
@@ -771,6 +773,7 @@
                         document.getElementById('noteMyAvatar').src = userData.photoURL;
                     }
                     
+                    syncNoteGlobals();
                     console.log('✅ Current user loaded:', currentUserName);
                 } else {
                     currentUserName = currentUser.displayName || currentUser.email.split('@')[0];
@@ -1532,70 +1535,105 @@
             }
         };
 
-        let audioPlaying = false;
+        // ===== INSTAGRAM NOTE VIEWER (with synced lyrics + DM reply) =====
+
+        // Expose globals needed by chat-notes.js
+        window._database = database;
+        window._dbRef = ref;
+        window._dbGet = get;
+        window._dbSet = set;
+        window._dbPush = push;
+        window._formatTimeAgo = formatTimeAgo;
+
+        // Update globals when user loads
+        function syncNoteGlobals() {
+            window._currentUserId = currentUser ? currentUser.uid : null;
+            window._currentUserName = currentUserName;
+            window._currentUserPhoto = currentUserPhoto;
+        }
 
         window.openNoteViewer = function(userId) {
             viewingNoteUserId = userId;
-            audioPlaying = false;
+            syncNoteGlobals();
             get(ref(database, `notes/${userId}`)).then(snap => {
                 if (!snap.exists()) return;
                 const note = snap.val();
-
-                document.getElementById('viewerAvatar').src = note.userPhoto || 'https://via.placeholder.com/40';
-                document.getElementById('viewerName').textContent = note.userName || 'User';
-                document.getElementById('viewerTime').textContent = formatTimeAgo(note.updatedAt);
-                document.getElementById('viewerText').textContent = note.text || '';
-
-                const ytContainer = document.getElementById('viewerYtContainer');
-                if (note.youtubeId) {
-                    document.getElementById('viewerYtIframe').src = `https://www.youtube.com/embed/${note.youtubeId}?autoplay=0&controls=0&enablejsapi=1`;
-                    document.getElementById('audioSongName').textContent = note.text || 'Lagu dari ' + (note.userName || 'teman');
-                    document.getElementById('audioPlayBtn').textContent = '▶';
-                    document.getElementById('audioMusicIcon').classList.remove('playing');
-                    ytContainer.style.display = 'block';
-                } else {
-                    ytContainer.style.display = 'none';
-                    document.getElementById('viewerYtIframe').src = '';
-                }
-
-                // Likes
-                const likes = note.likes || {};
-                const likeCount = Object.keys(likes).length;
-                const liked = likes[currentUser.uid];
-                document.getElementById('likeCount').textContent = likeCount;
-                document.getElementById('btnLikeNote').className = `btn-like-note${liked ? ' liked' : ''}`;
-                document.getElementById('btnLikeNote').innerHTML = `${liked ? '❤️' : '🤍'} <span id="likeCount">${likeCount}</span> Suka`;
-
-                renderReplies(note.replies || {});
-                document.getElementById('noteViewerModal').style.display = 'flex';
+                // Gunakan instagramNoteViewer dari chat-notes.js
+                window.instagramNoteViewer.open(userId, note);
             }).catch(err => console.error('Error opening note viewer:', err));
         };
 
-        window.toggleAudio = function() {
-            const iframe = document.getElementById('viewerYtIframe');
-            const btn = document.getElementById('audioPlayBtn');
-            const icon = document.getElementById('audioMusicIcon');
+        // ===== BALAS NOTE VIA DM =====
+        // Dipanggil dari chat-notes.js saat tombol ✉️ DM diklik
+        window.openDMWithNote = function(userId, note) {
+            // Cari user di allUsers
+            const user = allUsers.find(u => u.uid === userId);
+            const userName = user ? user.name : (note.userName || 'User');
+            const photoURL = user ? user.photoURL : (note.userPhoto || 'https://via.placeholder.com/40');
 
-            if (!audioPlaying) {
-                const currentSrc = iframe.src;
-                const videoId = currentSrc.match(/embed\/([a-zA-Z0-9_-]{11})/);
-                if (videoId) {
-                    iframe.src = `https://www.youtube.com/embed/${videoId[1]}?autoplay=1&controls=0&enablejsapi=1`;
-                }
-                btn.textContent = '⏸';
-                icon.classList.add('playing');
-                audioPlaying = true;
-            } else {
-                const currentSrc = iframe.src;
-                const videoId = currentSrc.match(/embed\/([a-zA-Z0-9_-]{11})/);
-                if (videoId) {
-                    iframe.src = `https://www.youtube.com/embed/${videoId[1]}?autoplay=0&controls=0&enablejsapi=1`;
-                }
-                btn.textContent = '▶';
-                icon.classList.remove('playing');
-                audioPlaying = false;
-            }
+            // Pindah ke tab Pesan
+            switchSidebarTab('pesan');
+
+            // Buka chat dengan user tersebut
+            selectUser(userId, userName, photoURL);
+
+            // Tampilkan banner "Membalas catatan" di atas input
+            showNoteReplyBanner(note);
         };
+
+        let _noteReplyContext = null;
+
+        function showNoteReplyBanner(note) {
+            // Hapus banner lama jika ada
+            const old = document.getElementById('noteReplyBanner');
+            if (old) old.remove();
+
+            const noteText = note.text || (note.youtubeId ? '🎵 Lagu' : 'Catatan');
+            const banner = document.createElement('div');
+            banner.id = 'noteReplyBanner';
+            banner.className = 'note-reply-banner';
+            banner.innerHTML = `
+                <div class="note-reply-banner-inner">
+                    <div class="note-reply-banner-text">
+                        <span class="note-reply-banner-label">✉️ Membalas catatan</span>
+                        <span class="note-reply-banner-content">${escapeHtml(noteText)}</span>
+                    </div>
+                    <button class="note-reply-banner-close" onclick="cancelNoteReplyBanner()" title="Batal">✕</button>
+                </div>
+            `;
+
+            // Sisipkan di atas input-area
+            const inputArea = document.querySelector('.input-area');
+            if (inputArea) {
+                inputArea.parentNode.insertBefore(banner, inputArea);
+            }
+
+            // Prefill pesan
+            const msgInput = document.getElementById('messageInput');
+            if (msgInput) {
+                msgInput.placeholder = `Balas catatan: "${noteText}"`;
+                msgInput.focus();
+            }
+
+            _noteReplyContext = note;
+        }
+
+        window.cancelNoteReplyBanner = function() {
+            const banner = document.getElementById('noteReplyBanner');
+            if (banner) banner.remove();
+            const msgInput = document.getElementById('messageInput');
+            if (msgInput) msgInput.placeholder = 'Ketik pesan...';
+            _noteReplyContext = null;
+        };
+
+        // Override closeChat agar banner juga hilang
+        const _origCloseChat = window.closeChat;
+        window.closeChat = function() {
+            cancelNoteReplyBanner();
+            _origCloseChat();
+        };
+
+        // Tidak ada perubahan pada sendMessage — pesan terkirim normal dengan konteks note
 
         function renderReplies(replies) {
             const container = document.getElementById('noteReplies');
@@ -1681,6 +1719,10 @@
             }
         };
 
+        // ===== SYNC NOTE GLOBALS SETELAH USER LOGIN =====
+        // dipanggil ulang di loadCurrentUser agar nama & foto terbaru
+
     </script>
+    <script src="chat-notes.js"></script>
 </body>
 </html>
